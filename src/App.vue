@@ -30,14 +30,14 @@ const menuOptions = [
     icon: () => h(NIcon, null, { default: () => h(TerminalOutline) }),
   },
   {
-    label: '项目配置',
-    key: 'profiles',
-    icon: () => h(NIcon, null, { default: () => h(FolderOpenOutline) }),
-  },
-  {
     label: '分组管理',
     key: 'groups',
     icon: () => h(NIcon, null, { default: () => h(FolderOutline) }),
+  },
+  {
+    label: '项目配置',
+    key: 'profiles',
+    icon: () => h(NIcon, null, { default: () => h(FolderOpenOutline) }),
   },
 ]
 

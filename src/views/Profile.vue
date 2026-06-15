@@ -55,14 +55,39 @@ const selectedTool = computed(() =>
   toolStore.tools.find((t) => t.id === form.value.tool_id)
 )
 
+const ALL_GROUP = '__all__'
+const UNGROUPED_GROUP = '__ungrouped__'
+
+const selectedGroup = ref(ALL_GROUP)
 const groupList = ref<GroupInfo[]>([])
 
-const groupOptions = computed(() =>
+const profileGroupOptions = computed(() =>
   groupList.value.map((g) => ({ label: g.name, value: g.name }))
 )
 
+const filterGroupOptions = computed(() => [
+  { label: '全部', value: ALL_GROUP },
+  { label: '未分组', value: UNGROUPED_GROUP },
+  ...groupList.value.map((g) => ({ label: g.name, value: g.name })),
+])
+
+const filteredProfiles = computed(() => {
+  if (selectedGroup.value === ALL_GROUP) {
+    return profileStore.profiles
+  }
+  if (selectedGroup.value === UNGROUPED_GROUP) {
+    return profileStore.profiles.filter((profile) => !profile.group)
+  }
+  return profileStore.profiles.filter((profile) => profile.group === selectedGroup.value)
+})
+
 async function fetchGroups() {
   groupList.value = await profileStore.getGroups()
+  const isBuiltInGroup = selectedGroup.value === ALL_GROUP || selectedGroup.value === UNGROUPED_GROUP
+  const groupExists = groupList.value.some((group) => group.name === selectedGroup.value)
+  if (!isBuiltInGroup && !groupExists) {
+    selectedGroup.value = ALL_GROUP
+  }
 }
 
 const columns = [
@@ -139,17 +164,33 @@ function handleEdit(profile: Profile) {
     project_path: profile.project_path,
     environment_ids: [...profile.environment_ids],
     tool_id: profile.tool_id,
-    enabled_flags: [...profile.enabled_flags],
+    enabled_flags: normalizeEnabledFlags(profile.tool_id, profile.enabled_flags),
     extra_variables: { ...profile.extra_variables },
     group: profile.group,
   }
   showModal.value = true
 }
 
+function normalizeEnabledFlags(toolId: string, enabledFlags: string[]) {
+  const tool = toolStore.tools.find((t) => t.id === toolId)
+  if (!tool) {
+    return [...enabledFlags]
+  }
+
+  const allowedFlags = new Set(tool.available_flags.map((flag) => flag.flag))
+  return enabledFlags.filter((flag) => allowedFlags.has(flag))
+}
+
+function handleToolChange(toolId: string) {
+  form.value.tool_id = toolId
+  form.value.enabled_flags = []
+}
+
 async function handleDelete(id: string) {
   try {
     await profileStore.deleteProfile(id)
     message.success('已删除')
+    await fetchGroups()
   } catch (e: any) {
     message.error(`删除失败: ${e}`)
   }
@@ -158,6 +199,7 @@ async function handleDelete(id: string) {
 async function handleSubmit() {
   try {
     const group = form.value.group || ''
+    const enabledFlags = normalizeEnabledFlags(form.value.tool_id, form.value.enabled_flags)
     if (editingId.value) {
       await profileStore.updateProfile(
         editingId.value,
@@ -165,7 +207,7 @@ async function handleSubmit() {
         form.value.project_path,
         form.value.environment_ids,
         form.value.tool_id,
-        form.value.enabled_flags,
+        enabledFlags,
         form.value.extra_variables,
         group
       )
@@ -175,7 +217,7 @@ async function handleSubmit() {
         form.value.project_path,
         form.value.environment_ids,
         form.value.tool_id,
-        form.value.enabled_flags,
+        enabledFlags,
         form.value.extra_variables,
         group
       )
@@ -205,14 +247,21 @@ onMounted(() => {
   <div>
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px">
       <h2>项目配置</h2>
-      <n-button type="primary" @click="handleAdd">
-        <template #icon><n-icon><AddOutline /></n-icon></template>
-        添加项目
-      </n-button>
+      <n-space align="center">
+        <n-select
+          v-model:value="selectedGroup"
+          :options="filterGroupOptions"
+          style="width: 180px"
+        />
+        <n-button type="primary" @click="handleAdd">
+          <template #icon><n-icon><AddOutline /></n-icon></template>
+          添加项目
+        </n-button>
+      </n-space>
     </div>
 
     <n-card>
-      <n-data-table :columns="columns" :data="profileStore.profiles" :bordered="false" />
+      <n-data-table :columns="columns" :data="filteredProfiles" :bordered="false" />
     </n-card>
 
     <n-modal v-model:show="showModal" preset="dialog" title="项目配置" style="width: 700px">
@@ -224,7 +273,7 @@ onMounted(() => {
         <n-form-item label="分组">
           <n-select
             v-model:value="form.group"
-            :options="groupOptions"
+            :options="profileGroupOptions"
             filterable
             tag
             placeholder="输入或选择分组（可留空）"
@@ -251,9 +300,10 @@ onMounted(() => {
 
         <n-form-item label="启动工具">
           <n-select
-            v-model:value="form.tool_id"
+            :value="form.tool_id"
             :options="toolOptions"
             placeholder="选择工具"
+            @update:value="handleToolChange"
           />
         </n-form-item>
 

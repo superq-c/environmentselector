@@ -17,6 +17,8 @@ export interface Tool {
   id: string
   name: string
   path: string
+  environment_ids: string[]
+  launch_template: string
   available_flags: ToolFlag[]
 }
 

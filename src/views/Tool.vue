@@ -1,27 +1,30 @@
 <script setup lang="ts">
-import { onMounted, ref, h } from 'vue'
+import { computed, h, onMounted, ref } from 'vue'
 import {
-  NCard,
   NButton,
+  NCard,
+  NCheckbox,
   NDataTable,
-  NModal,
+  NDivider,
   NForm,
   NFormItem,
-  NInput,
-  NCheckbox,
-  NSpace,
   NIcon,
+  NInput,
+  NModal,
   NPopconfirm,
+  NSelect,
+  NSpace,
   NTag,
-  NDivider,
   useMessage,
 } from 'naive-ui'
 import { AddOutline, TrashOutline } from '@vicons/ionicons5'
-import { useToolStore } from '../stores/tool'
 import PathPicker from '../components/PathPicker.vue'
+import { useEnvironmentStore } from '../stores/environment'
+import { useToolStore } from '../stores/tool'
 import type { Tool, ToolFlag } from '../types'
 
 const store = useToolStore()
+const envStore = useEnvironmentStore()
 const message = useMessage()
 
 const showModal = ref(false)
@@ -29,20 +32,42 @@ const editingId = ref<string | null>(null)
 const form = ref({
   name: '',
   path: '',
+  environment_ids: [] as string[],
+  launch_template: '',
   available_flags: [] as ToolFlag[],
 })
+
+const envOptions = computed(() =>
+  envStore.environments.map((env) => ({ label: env.name, value: env.id }))
+)
 
 const columns = [
   { title: '名称', key: 'name', width: 150 },
   { title: '路径', key: 'path' },
+  {
+    title: '启动环境',
+    key: 'environment_ids',
+    width: 220,
+    render(row: Tool) {
+      if (!row.environment_ids?.length) {
+        return h('span', { style: 'color: #999' }, '系统环境')
+      }
+      return h(NSpace, { size: 4 }, {
+        default: () => row.environment_ids.map((id) => {
+          const env = envStore.environments.find((item) => item.id === id)
+          return h(NTag, { type: 'success', size: 'small' }, { default: () => env?.name || id })
+        }),
+      })
+    },
+  },
   {
     title: '支持的参数',
     key: 'available_flags',
     width: 300,
     render(row: Tool) {
       return h(NSpace, {}, {
-        default: () => row.available_flags.map((f) =>
-          h(NTag, { type: f.dangerous ? 'error' : 'info', size: 'small' }, { default: () => f.label })
+        default: () => row.available_flags.map((flag) =>
+          h(NTag, { type: flag.dangerous ? 'error' : 'info', size: 'small' }, { default: () => flag.label })
         ),
       })
     },
@@ -65,13 +90,19 @@ const columns = [
   },
 ]
 
-function handleAdd() {
-  editingId.value = null
+function resetForm() {
   form.value = {
     name: '',
     path: '',
+    environment_ids: [],
+    launch_template: '',
     available_flags: [],
   }
+}
+
+function handleAdd() {
+  editingId.value = null
+  resetForm()
   showModal.value = true
 }
 
@@ -80,7 +111,9 @@ function handleEdit(tool: Tool) {
   form.value = {
     name: tool.name,
     path: tool.path,
-    available_flags: tool.available_flags.map((f) => ({ ...f })),
+    environment_ids: [...(tool.environment_ids || [])],
+    launch_template: tool.launch_template || '',
+    available_flags: tool.available_flags.map((flag) => ({ ...flag })),
   }
   showModal.value = true
 }
@@ -109,13 +142,25 @@ function removeFlag(index: number) {
 
 async function handleSubmit() {
   try {
-    // 过滤掉空的 flag
-    const validFlags = form.value.available_flags.filter((f) => f.flag.trim() && f.label.trim())
+    const validFlags = form.value.available_flags.filter((flag) => flag.flag.trim() && flag.label.trim())
 
     if (editingId.value) {
-      await store.updateTool(editingId.value, form.value.name, form.value.path, validFlags)
+      await store.updateTool(
+        editingId.value,
+        form.value.name,
+        form.value.path,
+        form.value.environment_ids,
+        form.value.launch_template,
+        validFlags
+      )
     } else {
-      await store.addTool(form.value.name, form.value.path, validFlags)
+      await store.addTool(
+        form.value.name,
+        form.value.path,
+        form.value.environment_ids,
+        form.value.launch_template,
+        validFlags
+      )
     }
     showModal.value = false
     message.success('已保存')
@@ -124,7 +169,10 @@ async function handleSubmit() {
   }
 }
 
-onMounted(() => store.fetchTools())
+onMounted(() => {
+  store.fetchTools()
+  envStore.fetchEnvironments()
+})
 </script>
 
 <template>
@@ -141,17 +189,37 @@ onMounted(() => store.fetchTools())
       <n-data-table :columns="columns" :data="store.tools" :bordered="false" />
     </n-card>
 
-    <n-modal v-model:show="showModal" preset="dialog" title="工具配置" style="width: 800px">
-      <n-form label-placement="left" label-width="80">
+    <n-modal v-model:show="showModal" preset="dialog" title="工具配置" style="width: 840px">
+      <n-form label-placement="left" label-width="110">
         <n-form-item label="名称">
-          <n-input v-model:value="form.name" placeholder="如：Claude Code" />
+          <n-input v-model:value="form.name" placeholder="例如：Codex" />
         </n-form-item>
+
         <n-form-item label="路径">
           <PathPicker
             :value="form.path"
-            placeholder="如：claude 或选择可执行文件"
+            placeholder="例如：codex 或选择可执行文件"
             :directory="false"
-            @update:value="(v: string) => form.path = v"
+            @update:value="(value: string) => form.path = value"
+          />
+        </n-form-item>
+
+        <n-form-item label="启动环境">
+          <n-select
+            v-model:value="form.environment_ids"
+            :options="envOptions"
+            multiple
+            clearable
+            placeholder="选择工具自身启动所需的环境，留空则使用系统环境"
+          />
+        </n-form-item>
+
+        <n-form-item label="启动模板">
+          <n-input
+            v-model:value="form.launch_template"
+            type="textarea"
+            placeholder="可选。留空使用 &quot;{tool}&quot; {args}。可使用 {tool}、{args} 以及环境变量占位符，如 {NODE_HOME}\\node.exe C:\\path\\codex.js {args}"
+            :autosize="{ minRows: 2, maxRows: 4 }"
           />
         </n-form-item>
 
@@ -164,7 +232,7 @@ onMounted(() => store.fetchTools())
         >
           <n-input
             v-model:value="flag.flag"
-            placeholder="参数名，如 --model"
+            placeholder="参数名，例如 --model"
             style="width: 200px"
           />
           <n-input
@@ -190,6 +258,7 @@ onMounted(() => store.fetchTools())
           添加参数
         </n-button>
       </n-form>
+
       <template #action>
         <n-space>
           <n-button @click="showModal = false">取消</n-button>

@@ -8,6 +8,7 @@ import {
   NForm,
   NFormItem,
   NInput,
+  NAlert,
   NSelect,
   NSwitch,
   NSpace,
@@ -218,6 +219,9 @@ onMounted(() => store.fetchEnvironments())
 
     <n-modal v-model:show="showModal" preset="dialog" title="环境配置" style="width: 700px">
       <n-form label-placement="left" label-width="100">
+        <n-alert type="info" :bordered="false" style="margin-bottom: 16px">
+          请注意环境变量名称和使用方式会决定路径应配置为文件夹还是具体文件。例如：JAVA_HOME 通常配置 JDK 目录，系统会自动加入 bin；NODE_HOME 通常配置 Node 安装目录，如 nvm\v22.17.0，不要配置到 node.exe。
+        </n-alert>
         <n-form-item label="名称">
           <n-input v-model:value="form.name" placeholder="如：Java 21" />
         </n-form-item>
